@@ -5,6 +5,7 @@
 PYTHON = python3
 CA65 = ca65
 LD65 = ld65
+Z80ASM = z80asm
 AC = $(TOOLS_DIR)/ac.jar
 
 # Directories
@@ -13,6 +14,7 @@ TOOLS_DIR = tools
 DATA_DIR = data
 VGZ_DIR = vgz
 BUILD_DIR = build
+MSX_DIR = msx
 
 # Source files
 ASM_SRCS = $(SRC_DIR)/startup.s $(SRC_DIR)/player.s $(SRC_DIR)/mockingboard.s
@@ -21,10 +23,12 @@ CFG_FILE = $(SRC_DIR)/apple2.cfg
 # Output
 TARGET = $(BUILD_DIR)/player.bin
 DISK_IMAGE = $(BUILD_DIR)/music.dsk
+MSX_TARGET = $(BUILD_DIR)/PLAYER.COM
 
 # VGZ files to convert
 VGZ_FILES = $(wildcard $(VGZ_DIR)/*.vgz)
 A2M_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.a2m,$(VGZ_FILES))
+MPSG_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.mpsg,$(VGZ_FILES))
 
 # Default target
 .PHONY: all
@@ -49,6 +53,30 @@ convert:
 		base=$$(basename "$$f" .vgz); \
 		$(PYTHON) $(TOOLS_DIR)/vgz2a2m.py "$$f" "$(DATA_DIR)/$$base.a2m"; \
 	done
+
+# Convert VGZ files to 8.3 MSX-DOS filenames (*.MPS)
+# Usage: make convert-msx [FPS=50|60]
+.PHONY: convert-msx
+convert-msx:
+	@fps=$${FPS:-60}; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/01 Title.vgz" "$(DATA_DIR)/TITLE.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/02 Game Start.vgz" "$(DATA_DIR)/GSTART.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/03 Main BGM 1.vgz" "$(DATA_DIR)/BGM1.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/04 Boss.vgz" "$(DATA_DIR)/BOSS.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/05 Stage Select.vgz" "$(DATA_DIR)/STAGE.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/06 Main BGM 2.vgz" "$(DATA_DIR)/BGM2.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/07 Last Boss.vgz" "$(DATA_DIR)/LBOSS.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/08 Ending.vgz" "$(DATA_DIR)/ENDING.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/09 Staff.vgz" "$(DATA_DIR)/STAFF.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/10 Death.vgz" "$(DATA_DIR)/DEATH.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/11 Game Over.vgz" "$(DATA_DIR)/GAMEOVER.MPS" "$$fps"
+
+# Build MSX-DOS player (.COM)
+.PHONY: msx-player
+msx-player: $(MSX_TARGET)
+
+$(MSX_TARGET): $(MSX_DIR)/player.asm | $(BUILD_DIR)
+	$(Z80ASM) -o $@ $<
 
 # Create a default/placeholder music file if needed
 $(DATA_DIR)/music.a2m: | $(DATA_DIR)
@@ -214,6 +242,7 @@ help:
 	@echo "Usage:"
 	@echo "  make              - Build player binary"
 	@echo "  make convert      - Convert all VGZ files to A2M"
+	@echo "  make convert-msx  - Convert all VGZ files to MPSG (MSX-DOS)"
 	@echo "  make play VGZ=... - Convert specific VGZ and rebuild"
 	@echo "  make image        - Convert title PNG to HGR format"
 	@echo "  make disk         - Create disk image (uses existing assets)"

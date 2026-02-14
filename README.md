@@ -2,6 +2,8 @@
 
 Apple II Mockingboard music player that plays VGZ (compressed VGM) files from MSX games.
 
+MSX-DOS PSG 포트 작업은 `/Users/honux/HobbyProjects/msx-music/msx`에서 진행 중입니다.
+
 [Play in Browser (apple2ts.com)](https://apple2ts.com/#https://github.com/honux77/apple2-music/raw/main/realeases/music-latest.dsk)
 
 ## Features
@@ -35,6 +37,9 @@ make
 
 # Convert all VGZ files to A2M format
 make convert
+
+# Convert all VGZ files to MPSG format (MSX-DOS skeleton)
+make convert-msx FPS=60
 
 # Convert title PNG to HGR image
 make image

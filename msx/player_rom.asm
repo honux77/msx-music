@@ -28,7 +28,7 @@ BDRCLR:         equ     0xF3EB              ; border color (system var)
 
 KONAMI_REG3:    equ     0xA000              ; map 8KB bank to 0xA000-0xBFFF
 RAM_BASE:       equ     0xC000
-MENU_ROW_BASE:  equ     6                   ; first menu item row
+MENU_ROW_BASE:  equ     5                   ; first menu item row (1-based)
 
         db      'A','B'
         dw      init                       ; init routine
@@ -117,36 +117,11 @@ menu_nav_down_inc:
 
 draw_menu_static:
         call    CLS
-        ; Title block
-        ld      h, 2
-        ld      l, 2
-        call    POSIT
-        ld      hl, msg_title
+        ld      hl, msg_screen
         call    print0
-        ld      h, 3
-        ld      l, 2
-        call    POSIT
-        ld      hl, msg_sep
-        call    print0
-        ; Menu items
-        ld      h, MENU_ROW_BASE + 0
-        ld      l, 1
-        call    POSIT
-        ld      hl, msg_item0
-        call    print0
-        ld      h, MENU_ROW_BASE + 1
-        ld      l, 1
-        call    POSIT
-        ld      hl, msg_item1
-        call    print0
-        ld      h, MENU_ROW_BASE + 2
-        ld      l, 1
-        call    POSIT
-        ld      hl, msg_item2
-        call    print0
-        ; Help line at bottom
-        ld      h, 24
-        ld      l, 1
+        ; Help line at last row: H=X(col 1), L=Y(row 23)
+        ld      h, 1
+        ld      l, 23
         call    POSIT
         ld      hl, msg_help
         call    print0
@@ -174,8 +149,8 @@ erase_menu_cursor:
 ; Out: cursor positioned at left marker column for that row
 menu_pos_for_sel:
         add     a, MENU_ROW_BASE
-        ld      h, a                        ; row
-        ld      l, 1                        ; column 1 (leftmost)
+        ld      l, a                        ; L = Y (row)
+        ld      h, 1                        ; H = X (col 1, leftmost)
         call    POSIT
         ret
 
@@ -273,10 +248,10 @@ play_all_done:
 
 ; In A = index 0..SONG_COUNT-1
 play_index:
-        ; Show song name at row 14
+        ; Show song name: H=X(col 1), L=Y(row 10)
         push    af
-        ld      h, 14
-        ld      l, 2
+        ld      h, 1
+        ld      l, 10
         call    POSIT
         ld      hl, msg_now_playing
         call    print0
@@ -564,23 +539,26 @@ print0:
         inc     hl
         jr      print0
 
-msg_title:
-        db      "** MSX PSG PLAYER - USAS BGM **",0
-
-msg_sep:
-        db      "--------------------------------",0
-
-msg_item0:
-        db      "  0) Play All",0
-
-msg_item1:
-        db      "  1) Mohenjo daro",0
-
-msg_item2:
-        db      "  2) Juba ruins",0
+; CRlf-based screen layout:
+;   row 0: blank
+;   row 1: title
+;   row 2: separator
+;   row 3: blank
+;   row 4: item 0  <- MENU_ROW_BASE
+;   row 5: item 1
+;   row 6: item 2
+msg_screen:
+        db      13,10
+        db      " * MSX PSG PLAYER - USAS *",13,10
+        db      " ==========================",13,10
+        db      13,10
+        db      " 0) Play All",13,10
+        db      " 1) Mohenjo daro",13,10
+        db      " 2) Juba ruins",13,10
+        db      0
 
 msg_help:
-        db      "SPC:Play  UP/DN:Move  LEFT:Quit",0
+        db      "SPC:Play UP/DN:Move L:Quit",0
 
 msg_now_playing:
         db      ">> Now Playing: ",0

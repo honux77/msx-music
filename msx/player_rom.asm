@@ -10,31 +10,29 @@
 
 CHGET:          equ     0x009F
 CHPUT:          equ     0x00A2
+CHSNS:          equ     0x009C              ; non-blocking key check (Z=no key)
 CLS:            equ     0x00C3
-POSIT:          equ     0x00C6
+POSIT:          equ     0x00C6              ; H=X(col), L=Y(row), 1-based
 CHGMOD:         equ     0x005F
 ENASLT:         equ     0x0024
 RSLREG:         equ     0x0138
-GTSTCK:         equ     0x00D5
-SNSMAT:         equ     0x0141
 
 PSG_ADDR_PORT:  equ     0xA0
 PSG_DATA_PORT:  equ     0xA1
 JIFFY:          equ     0xFC9E
 
-FORCLR:         equ     0xF3E9              ; foreground color (system var)
-BAKCLR:         equ     0xF3EA              ; background color (system var)
-BDRCLR:         equ     0xF3EB              ; border color (system var)
+FORCLR:         equ     0xF3E9
+BAKCLR:         equ     0xF3EA
+BDRCLR:         equ     0xF3EB
 
-KONAMI_REG3:    equ     0xA000              ; map 8KB bank to 0xA000-0xBFFF
+KONAMI_REG3:    equ     0xA000
 RAM_BASE:       equ     0xC000
-MENU_ROW_BASE:  equ     5                   ; first menu item row (1-based)
 
         db      'A','B'
-        dw      init                       ; init routine
-        dw      0                          ; statement
-        dw      0                          ; device
-        dw      0                          ; text
+        dw      init
+        dw      0
+        dw      0
+        dw      0
 
 init:
         ei
@@ -51,75 +49,41 @@ init:
         call    psg_selftest
         xor     a
         ld      (play_all_mode), a
-        ld      a, 1
-        ld      (menu_sel), a
+
+menu_redraw:
         call    draw_menu_static
-        ld      a, (menu_sel)
-        call    draw_menu_cursor
 
 menu_loop:
-        call    read_nav_event             ; A: 1=up 2=down 3=select 4=quit
-        cp      4
-        ret     z                          ; quit to BASIC
-        cp      1
-        jr      z, menu_nav_up
-        cp      2
-        jr      z, menu_nav_down
-        ; select
-        ld      a, (menu_sel)
-        or      a
-        jr      z, menu_play_all
-        dec     a                          ; 1..11 -> 0..10
-        call    play_index
-        call    draw_menu_static
-        ld      a, (menu_sel)
-        call    draw_menu_cursor
+        call    CHGET
+        cp      '0'
+        jr      z, menu_key_0
+        cp      '1'
+        jr      z, menu_key_1
+        cp      '2'
+        jr      z, menu_key_2
         jr      menu_loop
 
-menu_play_all:
+menu_key_0:
         call    play_all
-        call    draw_menu_static
-        ld      a, (menu_sel)
-        call    draw_menu_cursor
-        jr      menu_loop
+        jr      menu_redraw
 
-menu_nav_up:
-        ld      a, (menu_sel)
-        call    erase_menu_cursor
-        ld      a, (menu_sel)
-        or      a
-        jr      nz, menu_nav_up_dec
-        ld      a, SONG_COUNT
-        ld      (menu_sel), a
-        call    draw_menu_cursor
-        jr      menu_loop
-menu_nav_up_dec:
-        dec     a
-        ld      (menu_sel), a
-        call    draw_menu_cursor
-        jr      menu_loop
-
-menu_nav_down:
-        ld      a, (menu_sel)
-        call    erase_menu_cursor
-        ld      a, (menu_sel)
-        cp      SONG_COUNT
-        jr      nz, menu_nav_down_inc
+menu_key_1:
         xor     a
-        ld      (menu_sel), a
-        call    draw_menu_cursor
-        jr      menu_loop
-menu_nav_down_inc:
-        inc     a
-        ld      (menu_sel), a
-        call    draw_menu_cursor
-        jr      menu_loop
+        call    play_index
+        jr      menu_redraw
 
+menu_key_2:
+        ld      a, 1
+        call    play_index
+        jr      menu_redraw
+
+; -----------------------------------------------------------------------------
+; Menu display
+; -----------------------------------------------------------------------------
 draw_menu_static:
         call    CLS
         ld      hl, msg_screen
         call    print0
-        ; Help line at last row: H=X(col 1), L=Y(row 23)
         ld      h, 1
         ld      l, 23
         call    POSIT
@@ -127,103 +91,8 @@ draw_menu_static:
         call    print0
         ret
 
-; In A = selection 0..11
-draw_menu_cursor:
-        push    af
-        call    menu_pos_for_sel
-        ld      a, '>'
-        call    CHPUT
-        pop     af
-        ret
-
-; In A = selection 0..11
-erase_menu_cursor:
-        push    af
-        call    menu_pos_for_sel
-        ld      a, ' '
-        call    CHPUT
-        pop     af
-        ret
-
-; In A = selection 0..11
-; Out: cursor positioned at left marker column for that row
-menu_pos_for_sel:
-        add     a, MENU_ROW_BASE
-        ld      l, a                        ; L = Y (row)
-        ld      h, 1                        ; H = X (col 1, leftmost)
-        call    POSIT
-        ret
-
 ; -----------------------------------------------------------------------------
-; Direction/joystick input
-; Out A: 1=up 2=down 3=select(right) 4=quit(left)
-; -----------------------------------------------------------------------------
-read_nav_event:
-read_nav_release:
-        call    get_nav_state
-        or      a
-        jr      nz, read_nav_release
-read_nav_press:
-        call    get_nav_state
-        or      a
-        jr      z, read_nav_press
-        ret
-
-get_nav_state:
-        ; Check space bar (keyboard matrix row 8, bit 0)
-        ld      e, 8
-        call    SNSMAT
-        and     1
-        jr      nz, get_nav_directions      ; bit=1 means not pressed
-        ld      a, 3                        ; space = select/play
-        ret
-get_nav_directions:
-        xor     a                           ; cursor keys
-        call    GTSTCK
-        call    decode_stick
-        or      a
-        ret     nz
-        ld      a, 1                        ; joystick port 1
-        call    GTSTCK
-        call    decode_stick
-        ret
-
-; In A: GTSTCK code (0=center,1..8 directions)
-; Out A: 0 none, 1 up, 2 down, 3 select, 4 quit
-decode_stick:
-        cp      1
-        jr      z, decode_up
-        cp      2
-        jr      z, decode_up
-        cp      8
-        jr      z, decode_up
-        cp      4
-        jr      z, decode_down
-        cp      5
-        jr      z, decode_down
-        cp      6
-        jr      z, decode_down
-        cp      3
-        jr      z, decode_select
-        cp      7
-        jr      z, decode_quit
-        xor     a
-        ret
-decode_up:
-        ld      a, 1
-        ret
-decode_down:
-        ld      a, 2
-        ret
-decode_select:
-        ld      a, 3
-        ret
-decode_quit:
-        ld      a, 4
-        ret
-
-; -----------------------------------------------------------------------------
-; Playback selection
+; Playback
 ; -----------------------------------------------------------------------------
 play_all:
         ld      a, 1
@@ -239,6 +108,9 @@ play_all_loop:
         ld      a, (play_idx)
         inc     a
         ld      (play_idx), a
+        ld      a, (user_stop)
+        or      a
+        jr      nz, play_all_done
         jr      play_all_loop
 
 play_all_done:
@@ -248,7 +120,7 @@ play_all_done:
 
 ; In A = index 0..SONG_COUNT-1
 play_index:
-        ; Show song name: H=X(col 1), L=Y(row 10)
+        ; Show now playing
         push    af
         ld      h, 1
         ld      l, 10
@@ -257,9 +129,8 @@ play_index:
         call    print0
         pop     af
         push    af
-        ; look up song name from table
         ld      hl, song_name_table
-        add     a, a                        ; *2 for 16-bit pointer
+        add     a, a
         ld      e, a
         ld      d, 0
         add     hl, de
@@ -302,8 +173,17 @@ play_skip_header_loop:
 
         xor     a
         ld      (loop_set), a
+        ld      (user_stop), a
 
 play_stream_loop:
+        ; Any key pressed = stop
+        call    CHSNS
+        jr      z, play_no_stop
+        call    CHGET                       ; consume key
+        ld      a, 1
+        ld      (user_stop), a
+        jr      play_done
+play_no_stop:
         call    play_frame
         jr      c, play_done
         jr      play_stream_loop
@@ -385,7 +265,7 @@ play_song_end:
 
         ld      a, (play_all_mode)
         or      a
-        jr      nz, play_end              ; disable loop in play-all mode
+        jr      nz, play_end
 
         ld      a, (loop_bank)
         ld      (src_bank), a
@@ -398,8 +278,7 @@ play_end:
         scf
         ret
 
-; Read byte from banked ROM stream, advance pointer and bank when crossing 0xC000.
-; Out: A = byte
+; Read byte from banked ROM stream
 fetch_byte:
         ld      hl, (src_ptr)
         ld      a, (hl)
@@ -426,17 +305,15 @@ set_bank_data:
         ld      (KONAMI_REG3), a
         ret
 
-; Map page2 (0x8000-0xBFFF) to the same primary slot as page1 using BIOS.
 map_page2_to_cart_slot_bios:
-        call    RSLREG                     ; page slots in A
+        call    RSLREG
         rrca
-        rrca                               ; page1 bits -> bits0-1
-        and     0x03                       ; primary slot id
-        ld      h, 0x80                    ; page2 address range
+        rrca
+        and     0x03
+        ld      h, 0x80
         call    ENASLT
         ret
 
-; For Konami in this build, logical bank value is raw 8KB bank number.
 set_bank2_logical:
         jp      set_bank_data
 
@@ -464,7 +341,6 @@ wait_frames_spin:
         ret
 
 silence_psg:
-        ; mixer: all channels off, IOB=output (bit7=1)
         ld      a, 7
         di
         out     (PSG_ADDR_PORT), a
@@ -495,7 +371,6 @@ silence_psg:
         ret
 
 psg_selftest:
-        ; Channel A tone = fixed beep
         ld      a, 0
         di
         out     (PSG_ADDR_PORT), a
@@ -509,7 +384,6 @@ psg_selftest:
         ei
         out     (PSG_DATA_PORT), a
 
-        ; enable tone A only, IOB=output (bit7=1)
         ld      a, 7
         di
         out     (PSG_ADDR_PORT), a
@@ -517,7 +391,6 @@ psg_selftest:
         ei
         out     (PSG_DATA_PORT), a
 
-        ; volume A = 10
         ld      a, 8
         di
         out     (PSG_ADDR_PORT), a
@@ -530,7 +403,6 @@ psg_selftest:
         call    silence_psg
         ret
 
-; HL -> zero-terminated string
 print0:
         ld      a, (hl)
         or      a
@@ -539,14 +411,9 @@ print0:
         inc     hl
         jr      print0
 
-; CRlf-based screen layout:
-;   row 0: blank
-;   row 1: title
-;   row 2: separator
-;   row 3: blank
-;   row 4: item 0  <- MENU_ROW_BASE
-;   row 5: item 1
-;   row 6: item 2
+; -----------------------------------------------------------------------------
+; Strings
+; -----------------------------------------------------------------------------
 msg_screen:
         db      13,10
         db      " * MSX PSG PLAYER - USAS *",13,10
@@ -558,7 +425,7 @@ msg_screen:
         db      0
 
 msg_help:
-        db      "SPC:Play UP/DN:Move L:Quit",0
+        db      "0-2:Select  Any key:Stop",0
 
 msg_now_playing:
         db      ">> Now Playing: ",0
@@ -575,12 +442,12 @@ song_name1:
 
 include "song_table.inc"
 
-; Runtime state must live in RAM (ROM is read-only)
-src_ptr:        equ     RAM_BASE + 0       ; 2 bytes
-src_bank:       equ     RAM_BASE + 2       ; 1 byte
-loop_ptr:       equ     RAM_BASE + 3       ; 2 bytes
-loop_bank:      equ     RAM_BASE + 5       ; 1 byte
-loop_set:       equ     RAM_BASE + 6       ; 1 byte
-play_all_mode:  equ     RAM_BASE + 7       ; 1 byte
-play_idx:       equ     RAM_BASE + 8       ; 1 byte
-menu_sel:       equ     RAM_BASE + 9       ; 1 byte
+; Runtime state (RAM)
+src_ptr:        equ     RAM_BASE + 0
+src_bank:       equ     RAM_BASE + 2
+loop_ptr:       equ     RAM_BASE + 3
+loop_bank:      equ     RAM_BASE + 5
+loop_set:       equ     RAM_BASE + 6
+play_all_mode:  equ     RAM_BASE + 7
+play_idx:       equ     RAM_BASE + 8
+user_stop:      equ     RAM_BASE + 9

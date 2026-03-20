@@ -39,8 +39,6 @@ LOAD_ADDR:      equ     0x8000
 MAX_LEN:        equ     0x7FF0                  ; keep below ~0xFFFF
 
 start:
-        call    print_banner
-
         ld      de, FCB_DEFAULT
         ld      c, FN_OPEN
         call    BDOS
@@ -111,6 +109,9 @@ read_done:
         xor     a
         ld      (loop_set), a
 
+        ; Initialize PSG before playback
+        call    init_psg
+
 main_loop:
         call    play_frame
         jr      c, done
@@ -128,6 +129,7 @@ bad_format:
         jp      exit_fail
 
 file_open_error:
+        call    print_banner
         ld      de, msg_openerr
         call    print_msg
         jp      exit_fail
@@ -165,9 +167,20 @@ play_frame:
         ld      d, (hl)
         inc     hl
         ld      (data_ptr), hl
+        ; R7 (mixer): keep lower 6 bits, force IOB=output (bit7=1)
         ld      a, e
+        cp      7
+        jr      nz, .psg_write
+        ld      a, d
+        and     3Fh
+        or      80h
+        ld      d, a
+.psg_write:
+        ld      a, e
+        di
         out     (PSG_ADDR_PORT), a
         ld      a, d
+        ei
         out     (PSG_DATA_PORT), a
         jr      .next_cmd
 
@@ -220,38 +233,71 @@ wait_frames_de:
         or      e
         ret     z
 
-.wait_one:
-        ld      a, (JIFFY)
-        ld      b, a
-.jiffy_spin:
-        ld      a, (JIFFY)
-        cp      b
-        jr      z, .jiffy_spin
+.wait_loop:
+        ld      hl, JIFFY
+        ld      a, (hl)
+.wait_change:
+        ld      hl, JIFFY
+        cp      (hl)
+        jr      z, .wait_change
+        
         dec     de
         ld      a, d
         or      e
-        jr      nz, .wait_one
+        jr      nz, .wait_loop
         ret
 
 silence_psg:
-        ; mixer off
+        ; mixer: all channels off, IOB=output (bit7=1)
         ld      a, 7
+        di
         out     (PSG_ADDR_PORT), a
-        ld      a, 3Fh
+        ld      a, 0BFh
+        ei
         out     (PSG_DATA_PORT), a
 
         ; volume A/B/C = 0
         ld      a, 8
+        di
         out     (PSG_ADDR_PORT), a
         xor     a
+        ei
         out     (PSG_DATA_PORT), a
         ld      a, 9
+        di
         out     (PSG_ADDR_PORT), a
         xor     a
+        ei
         out     (PSG_DATA_PORT), a
         ld      a, 10
+        di
         out     (PSG_ADDR_PORT), a
         xor     a
+        ei
+        out     (PSG_DATA_PORT), a
+        ret
+
+init_psg:
+        ; Reset all PSG registers (R0..R13 = 0)
+        ld      b, 14
+        xor     a
+.clear_loop:
+        ld      c, a
+        di
+        out     (PSG_ADDR_PORT), a
+        xor     a
+        ei
+        out     (PSG_DATA_PORT), a
+        ld      a, c
+        inc     a
+        djnz    .clear_loop
+
+        ; Mixer: tone A/B/C on, noise off, IOB=output (bit7=1)
+        ld      a, 7
+        di
+        out     (PSG_ADDR_PORT), a
+        ld      a, 0B8h
+        ei
         out     (PSG_DATA_PORT), a
         ret
 
@@ -279,8 +325,8 @@ msg_too_big:
 msg_done:
         db "Done", 13, 10, "$"
 
-load_ptr:    dw 0
-file_size:   dw 0
-data_ptr:    dw 0
-loop_ptr:    dw 0
-loop_set:    db 0
+load_ptr:       dw 0
+file_size:      dw 0
+data_ptr:       dw 0
+loop_ptr:       dw 0
+loop_set:       db 0

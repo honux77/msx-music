@@ -59,17 +59,8 @@ convert:
 .PHONY: convert-msx
 convert-msx:
 	@fps=$${FPS:-60}; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/01 Title.vgz" "$(DATA_DIR)/TITLE.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/02 Game Start.vgz" "$(DATA_DIR)/GSTART.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/03 Main BGM 1.vgz" "$(DATA_DIR)/BGM1.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/04 Boss.vgz" "$(DATA_DIR)/BOSS.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/05 Stage Select.vgz" "$(DATA_DIR)/STAGE.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/06 Main BGM 2.vgz" "$(DATA_DIR)/BGM2.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/07 Last Boss.vgz" "$(DATA_DIR)/LBOSS.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/08 Ending.vgz" "$(DATA_DIR)/ENDING.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/09 Staff.vgz" "$(DATA_DIR)/STAFF.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/10 Death.vgz" "$(DATA_DIR)/DEATH.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/11 Game Over.vgz" "$(DATA_DIR)/GAMEOVER.MPS" "$$fps"
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/01 Usas [Mohenjo daro].vgz" "$(DATA_DIR)/MOHENJO.MPS" "$$fps"; \
+	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/02 Usas [Juba ruins].vgz" "$(DATA_DIR)/JUBA.MPS" "$$fps"
 
 # Build MSX-DOS player (.COM)
 .PHONY: msx-player
@@ -77,6 +68,23 @@ msx-player: $(MSX_TARGET)
 
 $(MSX_TARGET): $(MSX_DIR)/player.asm | $(BUILD_DIR)
 	$(Z80ASM) -o $@ $<
+
+# Build MSX ROM image (Konami mapper, 128KB)
+MSX_ROM_TARGET = $(BUILD_DIR)/player.rom
+
+.PHONY: msx-rom
+msx-rom:
+	$(PYTHON) $(TOOLS_DIR)/build_msx_rom.py
+
+# Build MSX-DOS disk image with player and music files
+.PHONY: msx-disk
+msx-disk: msx-player
+	@if command -v mcopy >/dev/null 2>&1; then \
+		$(TOOLS_DIR)/make_msx_disk.sh; \
+	else \
+		echo "Error: mtools not found. Install with: brew install mtools"; \
+		exit 1; \
+	fi
 
 # Create a default/placeholder music file if needed
 $(DATA_DIR)/music.a2m: | $(DATA_DIR)
@@ -243,6 +251,8 @@ help:
 	@echo "  make              - Build player binary"
 	@echo "  make convert      - Convert all VGZ files to A2M"
 	@echo "  make convert-msx  - Convert all VGZ files to MPSG (MSX-DOS)"
+	@echo "  make msx-player   - Build MSX-DOS player (PLAYER.COM)"
+	@echo "  make msx-disk     - Create MSX-DOS disk with player and music"
 	@echo "  make play VGZ=... - Convert specific VGZ and rebuild"
 	@echo "  make image        - Convert title PNG to HGR format"
 	@echo "  make disk         - Create disk image (uses existing assets)"

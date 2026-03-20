@@ -1,0 +1,11 @@
+<software>
+  <system>MSX</system>
+  <title>Honux PSG Player</title>
+  <dump>
+    <rom>
+      <hash algo="sha1">cbb0773e3a07d381c3ed0eecaaa14b0f9f1928ec</hash>
+      <type>Konami</type>
+      <start>0x4000</start>
+    </rom>
+  </dump>
+</software>

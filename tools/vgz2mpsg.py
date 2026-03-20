@@ -75,8 +75,9 @@ def convert(vgm: bytes, fps: int):
         if pending_samples == 0:
             return
 
-        frames = pending_samples // samples_per_frame
-        pending_samples %= samples_per_frame
+        # Round to nearest frame instead of truncating
+        frames = (pending_samples + samples_per_frame // 2) // samples_per_frame
+        pending_samples = 0
 
         while frames > 0:
             chunk = min(frames, 65535)

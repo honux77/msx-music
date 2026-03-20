@@ -12,17 +12,23 @@ CHGET:          equ     0x009F
 CHPUT:          equ     0x00A2
 CLS:            equ     0x00C3
 POSIT:          equ     0x00C6
+CHGMOD:         equ     0x005F
 ENASLT:         equ     0x0024
 RSLREG:         equ     0x0138
 GTSTCK:         equ     0x00D5
+SNSMAT:         equ     0x0141
 
 PSG_ADDR_PORT:  equ     0xA0
 PSG_DATA_PORT:  equ     0xA1
 JIFFY:          equ     0xFC9E
 
-KONAMI_REG3:    equ     0xA000            ; map 8KB bank to 0xA000-0xBFFF
+FORCLR:         equ     0xF3E9              ; foreground color (system var)
+BAKCLR:         equ     0xF3EA              ; background color (system var)
+BDRCLR:         equ     0xF3EB              ; border color (system var)
+
+KONAMI_REG3:    equ     0xA000              ; map 8KB bank to 0xA000-0xBFFF
 RAM_BASE:       equ     0xC000
-MENU_ROW_BASE:  equ     3
+MENU_ROW_BASE:  equ     6                   ; first menu item row
 
         db      'A','B'
         dw      init                       ; init routine
@@ -33,6 +39,15 @@ MENU_ROW_BASE:  equ     3
 init:
         ei
         call    map_page2_to_cart_slot_bios
+        ; Switch to SCREEN 1: white text on dark blue
+        ld      a, 15
+        ld      (FORCLR), a
+        ld      a, 4
+        ld      (BAKCLR), a
+        ld      a, 4
+        ld      (BDRCLR), a
+        ld      a, 1
+        call    CHGMOD
         call    psg_selftest
         xor     a
         ld      (play_all_mode), a
@@ -102,9 +117,38 @@ menu_nav_down_inc:
 
 draw_menu_static:
         call    CLS
-        ld      hl, msg_banner
+        ; Title block
+        ld      h, 2
+        ld      l, 2
+        call    POSIT
+        ld      hl, msg_title
         call    print0
-        ld      hl, msg_menu
+        ld      h, 3
+        ld      l, 2
+        call    POSIT
+        ld      hl, msg_sep
+        call    print0
+        ; Menu items
+        ld      h, MENU_ROW_BASE + 0
+        ld      l, 1
+        call    POSIT
+        ld      hl, msg_item0
+        call    print0
+        ld      h, MENU_ROW_BASE + 1
+        ld      l, 1
+        call    POSIT
+        ld      hl, msg_item1
+        call    print0
+        ld      h, MENU_ROW_BASE + 2
+        ld      l, 1
+        call    POSIT
+        ld      hl, msg_item2
+        call    print0
+        ; Help line at bottom
+        ld      h, 24
+        ld      l, 1
+        call    POSIT
+        ld      hl, msg_help
         call    print0
         ret
 
@@ -131,7 +175,7 @@ erase_menu_cursor:
 menu_pos_for_sel:
         add     a, MENU_ROW_BASE
         ld      h, a                        ; row
-        ld      l, 0                        ; column
+        ld      l, 1                        ; column 1 (leftmost)
         call    POSIT
         ret
 
@@ -151,6 +195,14 @@ read_nav_press:
         ret
 
 get_nav_state:
+        ; Check space bar (keyboard matrix row 8, bit 0)
+        ld      e, 8
+        call    SNSMAT
+        and     1
+        jr      nz, get_nav_directions      ; bit=1 means not pressed
+        ld      a, 3                        ; space = select/play
+        ret
+get_nav_directions:
         xor     a                           ; cursor keys
         call    GTSTCK
         call    decode_stick
@@ -221,6 +273,28 @@ play_all_done:
 
 ; In A = index 0..SONG_COUNT-1
 play_index:
+        ; Show song name at row 14
+        push    af
+        ld      h, 14
+        ld      l, 2
+        call    POSIT
+        ld      hl, msg_now_playing
+        call    print0
+        pop     af
+        push    af
+        ; look up song name from table
+        ld      hl, song_name_table
+        add     a, a                        ; *2 for 16-bit pointer
+        ld      e, a
+        ld      d, 0
+        add     hl, de
+        ld      a, (hl)
+        inc     hl
+        ld      h, (hl)
+        ld      l, a
+        call    print0
+        pop     af
+
         ld      hl, song_table
         ld      b, a
         ld      de, 3
@@ -490,20 +564,36 @@ print0:
         inc     hl
         jr      print0
 
-msg_banner:
-        db      13,10
-        db      "MSX ROM PSG PLAYER",13,10
-        db      "UP/DOWN move, RIGHT select, LEFT quit",13,10,0
+msg_title:
+        db      "** MSX PSG PLAYER - USAS BGM **",0
 
-msg_menu:
-        db      13,10
-        db      " 0) Play all (sequential)",13,10
-        db      " 1) Mohenjo daro",13,10
-        db      " 2) Juba ruins",13,10
-        db      " LEFT = Quit",13,10,0
+msg_sep:
+        db      "--------------------------------",0
 
-msg_invalid:
-        db      13,10,"Invalid selection.",13,10,0
+msg_item0:
+        db      "  0) Play All",0
+
+msg_item1:
+        db      "  1) Mohenjo daro",0
+
+msg_item2:
+        db      "  2) Juba ruins",0
+
+msg_help:
+        db      "SPC:Play  UP/DN:Move  LEFT:Quit",0
+
+msg_now_playing:
+        db      ">> Now Playing: ",0
+
+song_name_table:
+        dw      song_name0
+        dw      song_name1
+
+song_name0:
+        db      "Mohenjo daro",0
+
+song_name1:
+        db      "Juba ruins",0
 
 include "song_table.inc"
 

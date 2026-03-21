@@ -1,0 +1,37 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install make
+        run: choco install make --no-progress -y
+        shell: powershell
+
+      - name: Build disk image and ROM
+        run: |
+          make msx-disk
+          make msx-rom
+        shell: bash
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/msx-music.dsk
+            build/player.rom
+            build/MPSPLAY.COM
+            build/MENU.COM

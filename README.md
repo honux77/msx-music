@@ -1,127 +1,99 @@
-# Honux Music Player
+# MSX Music Player
 
-Apple II Mockingboard music player that plays VGZ (compressed VGM) files from MSX games.
-
-MSX-DOS PSG 포트 작업은 `/Users/honux/HobbyProjects/msx-music/msx`에서 진행 중입니다.
-
-[Play in Browser (apple2ts.com)](https://apple2ts.com/#https://github.com/honux77/apple2-music/raw/main/realeases/music-latest.dsk)
+MSX용 VGZ/VGM 파일 플레이어. MSX-DOS 실행파일(.COM)과 ROM 카트리지 두 가지 형태로 동작합니다.
 
 ## Features
 
-- Plays AY-3-8910 PSG music from VGZ/VGM files
-- Supports Mockingboard slots 4, 5, or 7
-- Stereo output (both PSG chips)
-- Loop support for continuous playback
-- 3-channel volume visualizer (one bar per line)
-- HGR title screen on boot (skipped on menu return)
-- Auto-return to menu after song ends or ESC
-- DOS zero page save/restore for clean BASIC integration
+- AY-3-8910 PSG 음악 재생 (VGZ/VGM 포맷)
+- MSX-DOS 플레이어 (`MPSPLAY.COM`)
+- ROM 카트리지 플레이어 (Konami 매퍼, 128KB)
+- 루프 지원
+- Windows/Linux/macOS 빌드 지원
 
 ## Requirements
 
-### Build Tools
 - Python 3.x
-- cc65 toolchain (ca65, ld65)
-- Java 8+ (for AppleCommander)
-- Pillow (Python image library)
-
-### Hardware/Emulator
-- Apple II with Mockingboard
-- Or emulator with Mockingboard support (AppleWin, MAME, etc.)
+- `tools/z80asm.exe` (Windows, 동봉) 또는 시스템의 `z80asm`
+- openMSX (실행/테스트용)
 
 ## Building
 
 ```bash
-# Build player binary only
-make
+# 전체 빌드 (VGZ 변환 + MPSPLAY.COM 빌드)
+mingw32-make
 
-# Convert all VGZ files to A2M format
-make convert
+# MSX-DOS 디스크 이미지 생성
+mingw32-make msx-disk
 
-# Convert all VGZ files to MPSG format (MSX-DOS skeleton)
-make convert-msx FPS=60
+# ROM 카트리지 빌드
+mingw32-make msx-rom
 
-# Convert title PNG to HGR image
-make image
+# VGZ → MPS 변환만 (50Hz MSX의 경우 FPS=50)
+mingw32-make convert-msx FPS=60
 
-# Create disk image (requires pre-built assets)
-make disk
-
-# Full build from scratch (convert + image + disk)
-make all-disk
-
-# Convert specific VGZ file and rebuild
-make play VGZ="vgz/01 Title.vgz"
-
-# Clean build artifacts
-make clean
+# 빌드 결과물 삭제
+mingw32-make clean
 ```
 
 ## Usage
 
-1. Boot the disk image in an Apple II emulator or real hardware
-2. Title screen is displayed on first boot
-3. Select Mockingboard slot (4, 5, or 7)
-4. Choose a song from the menu
-5. Press ESC to stop - automatically returns to menu
-6. Songs without loop also return to menu when finished
-7. Select 0 to quit
+### MSX-DOS (`MPSPLAY.COM`)
+
+```
+MPSPLAY USASMO01.MPS
+```
+
+### ROM 카트리지
+
+openMSX로 실행:
+```bash
+openmsx -machine Panasonic_FS-A1GT -cart build/player.rom
+```
+
+숫자 키로 곡 선택, 재생 후 자동으로 메뉴로 복귀.
 
 ## File Structure
 
 ```
-apple2-music/
-├── src/
-│   ├── player.s        # Main player (6502 assembly)
-│   ├── mockingboard.s  # Mockingboard driver
-│   ├── startup.s       # Entry point
-│   └── apple2.cfg      # Linker configuration
+msx-music/
+├── msx/
+│   ├── player.asm       # MSX-DOS 플레이어 (Z80)
+│   └── player_rom.asm   # ROM 카트리지 플레이어 (Z80)
 ├── tools/
-│   ├── vgz2a2m.py      # VGZ to A2M converter
-│   ├── genmenu.py      # BASIC menu generator
-│   ├── png2hgr.py      # PNG to HGR converter
-│   └── ac.jar          # AppleCommander
-├── vgz/                # Source VGZ files
-├── data/               # Converted A2M files
-├── build/              # Build output
-│   ├── player.bin      # Player binary
-│   └── music.dsk       # Disk image
+│   ├── z80asm.exe       # Z80 어셈블러 (Windows 바이너리)
+│   ├── vgz2mpsg.py      # VGZ → MPS 변환기
+│   ├── convert_msx.py   # 배치 변환 (vgz/ → data/)
+│   ├── build_msx_rom.py # ROM 이미지 빌드
+│   └── make_msx_disk.py # MSX-DOS 디스크 이미지 생성
+├── vgz/                 # 소스 VGZ 파일
+├── data/                # 변환된 MPS 파일 (빌드 결과물)
+├── build/               # 빌드 출력
+│   ├── MPSPLAY.COM      # MSX-DOS 플레이어
+│   ├── player.rom       # ROM 카트리지
+│   └── msx-music.dsk    # MSX-DOS 디스크 이미지
 └── Makefile
 ```
 
-## A2M Format
+## MPSG Format
 
-Custom compact format for Apple II:
+MSX-DOS 플레이어용 커스텀 포맷:
 
 ```
 Header (16 bytes):
-  0-3:  Magic "A2M\x00"
+  0-3:  Magic "MPSG"
   4-5:  Data length (little-endian)
   6-7:  Loop offset (0 = no loop)
   8-15: Reserved
 
 Data Stream:
-  $00-$0D vv  : Write value vv to PSG register
-  $80-$FD     : Wait 1-126 frames (60Hz)
-  $FD         : Loop marker
-  $FE         : End of song
-  $FF nn nn   : Extended wait (16-bit frame count)
+  00-0D vv  : PSG 레지스터 쓰기
+  80-FD     : 1-126 프레임 대기
+  FD        : 루프 마커
+  FE        : 곡 끝
+  FF ll hh  : 확장 대기 (16-bit 프레임 수)
 ```
-
-## Memory Map
-
-| Address | Size | Content |
-|---------|------|---------|
-| $0080-$009F | 32B | Zero page (saved/restored for DOS) |
-| $0300   | 1    | Slot number |
-| $0301   | 1    | Boot flag (1 = title shown) |
-| $0800   | -    | BASIC program |
-| $2000   | 8KB  | HGR title image |
-| $4000   | 20KB | Music data (A2M) |
-| $9000   | 1.5KB| Player binary |
 
 ## Credits
 
 - Player by Honux
-- Built with cc65 toolchain
-- Disk images created with AppleCommander
+- Z80 assembler: z80asm 1.8

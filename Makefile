@@ -15,7 +15,7 @@ BUILD_DIR = build
 MSX_DIR = msx
 
 # Output
-MSX_TARGET = $(BUILD_DIR)/PLAYER.COM
+MSX_TARGET = $(BUILD_DIR)/MPSPLAY.COM
 
 # Default target
 .PHONY: all
@@ -85,10 +85,10 @@ help:
 	@echo "MSX-DOS Music Player"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make / make msx-all   - Convert music + build PLAYER.COM"
+	@echo "  make / make msx-all   - Convert music + build MPSPLAY.COM"
 	@echo "  make convert-msx      - Convert VGZ files to MPS (MSX-DOS)"
 	@echo "  make convert-msx FPS=50 - Convert at 50Hz"
-	@echo "  make msx-player       - Build PLAYER.COM only"
+	@echo "  make msx-player       - Build MPSPLAY.COM only"
 	@echo "  make msx-rom          - Build ROM image (Konami mapper)"
 	@echo "  make msx-disk         - Create bootable MSX-DOS disk image"
 	@echo "  make clean            - Remove build artifacts"

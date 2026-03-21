@@ -311,7 +311,7 @@ print_msg:
 
 msg_banner:
         db "MSX-DOS PSG PLAYER", 13, 10
-        db "Usage: PLAYER TITLE.MPS", 13, 10, "$"
+        db "Usage: MPSPLAY TITLE.MPS", 13, 10, "$"
 
 msg_openerr:
         db "File open error", 13, 10, "$"

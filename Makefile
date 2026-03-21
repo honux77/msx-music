@@ -33,9 +33,13 @@ VGZ_FILES = $(wildcard $(VGZ_DIR)/*.vgz)
 A2M_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.a2m,$(VGZ_FILES))
 MPSG_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.mpsg,$(VGZ_FILES))
 
-# Default target
+# Default target (Apple II)
 .PHONY: all
 all: $(TARGET)
+
+# MSX all-in-one: convert music + build player
+.PHONY: msx-all
+msx-all: convert-msx msx-player
 
 # Create build directory
 $(BUILD_DIR):
@@ -255,6 +259,7 @@ help:
 	@echo "Usage:"
 	@echo "  make              - Build player binary"
 	@echo "  make convert      - Convert all VGZ files to A2M"
+	@echo "  make msx-all      - Convert music + build MSX-DOS player (PLAYER.COM)"
 	@echo "  make convert-msx  - Convert all VGZ files to MPSG (MSX-DOS)"
 	@echo "  make msx-player   - Build MSX-DOS player (PLAYER.COM)"
 	@echo "  make msx-disk     - Create MSX-DOS disk with player and music"

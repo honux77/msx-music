@@ -1,6 +1,9 @@
 # Apple II Mockingboard Music Player - Makefile
 # Converts VGZ files to A2M format and builds the player
 
+# Shell (use bash explicitly for Windows compatibility with mingw32-make)
+SHELL = bash
+
 # Tools
 PYTHON = python
 CA65 = ca65

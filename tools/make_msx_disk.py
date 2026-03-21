@@ -181,7 +181,8 @@ def main():
             continue
         disk.add_file(p.name, p.read_bytes())
 
-    Path(output_path).write_bytes(image)
+    with open(output_path, 'wb') as f:
+        f.write(image)
     print()
     disk.list_files()
     print(f"\nDisk image: {output_path}")

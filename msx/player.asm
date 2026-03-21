@@ -24,6 +24,8 @@ BDOS:           equ     0x0005
 
 FN_TERM:        equ     0x00
 FN_PRINT:       equ     0x09
+FN_KBHIT:       equ     0x0B                    ; console status (0xFF=key ready)
+FN_CONIN:       equ     0x08                    ; console input (no echo)
 FN_OPEN:        equ     0x0F
 FN_CLOSE:       equ     0x10
 FN_READ_SEQ:    equ     0x14
@@ -187,8 +189,7 @@ play_frame:
 .wait_short:
         sub     7Fh                            ; 80h->1 frame ... FDh->126
         call    wait_frames_a
-        or      a
-        ret
+        ret                                    ; propagate carry (key stop)
 
 .wait_ext:
         ld      hl, (data_ptr)
@@ -198,8 +199,7 @@ play_frame:
         inc     hl
         ld      (data_ptr), hl
         call    wait_frames_de
-        or      a
-        ret
+        ret                                    ; propagate carry (key stop)
 
 .set_loop:
         ld      a, (loop_set)
@@ -231,7 +231,7 @@ wait_frames_a:
 wait_frames_de:
         ld      a, d
         or      e
-        ret     z
+        ret     z                              ; done, no carry
 
 .wait_loop:
         ld      hl, JIFFY
@@ -240,11 +240,32 @@ wait_frames_de:
         ld      hl, JIFFY
         cp      (hl)
         jr      z, .wait_change
-        
+
+        ; check for keypress each frame
+        ld      c, FN_KBHIT
+        call    BDOS
+        or      a
+        jr      nz, .key_pressed
+
         dec     de
         ld      a, d
         or      e
         jr      nz, .wait_loop
+        or      a                              ; clear carry = done normally
+        ret
+
+.key_pressed:
+        ld      c, FN_CONIN                    ; read the key
+        call    BDOS
+        cp      0x1B                           ; ESC?
+        scf
+        ret     z                              ; ESC -> carry = stop
+        ; other key: count this tick and keep playing
+        dec     de
+        ld      a, d
+        or      e
+        jr      nz, .wait_loop
+        or      a                              ; clear carry, done normally
         ret
 
 silence_psg:

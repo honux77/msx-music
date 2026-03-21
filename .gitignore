@@ -61,6 +61,7 @@ tools/ac.jar
 tools/__pycache__/
 data/*.a2m
 data/*.MPS
+data/songs.json
 msx/song_table.inc
 *.lst
 

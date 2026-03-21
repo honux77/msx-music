@@ -58,23 +58,15 @@ menu_loop:
         cp      '0'
         jr      z, menu_key_0
         cp      '1'
-        jr      z, menu_key_1
-        cp      '2'
-        jr      z, menu_key_2
-        jr      menu_loop
+        jr      c, menu_loop        ; < '1', ignore
+        sub     '1'                 ; convert to 0-based index
+        cp      SONG_COUNT
+        jr      nc, menu_loop       ; >= SONG_COUNT, ignore
+        call    play_index
+        jr      menu_redraw
 
 menu_key_0:
         call    play_all
-        jr      menu_redraw
-
-menu_key_1:
-        xor     a
-        call    play_index
-        jr      menu_redraw
-
-menu_key_2:
-        ld      a, 1
-        call    play_index
         jr      menu_redraw
 
 ; -----------------------------------------------------------------------------
@@ -123,7 +115,7 @@ play_index:
         ; Show now playing
         push    af
         ld      h, 1
-        ld      l, 10
+        ld      l, 22
         call    POSIT
         ld      hl, msg_now_playing
         call    print0
@@ -414,32 +406,10 @@ print0:
 ; -----------------------------------------------------------------------------
 ; Strings
 ; -----------------------------------------------------------------------------
-msg_screen:
-        db      13,10
-        db      " * MSX PSG PLAYER - USAS *",13,10
-        db      " ==========================",13,10
-        db      13,10
-        db      " 0) Play All",13,10
-        db      " 1) Mohenjo daro",13,10
-        db      " 2) Juba ruins",13,10
-        db      0
-
-msg_help:
-        db      "0-2:Select  Any key:Stop",0
-
 msg_now_playing:
         db      ">> Now Playing: ",0
 
-song_name_table:
-        dw      song_name0
-        dw      song_name1
-
-song_name0:
-        db      "Mohenjo daro",0
-
-song_name1:
-        db      "Juba ruins",0
-
+; msg_screen, msg_help, song_name_table, song_name_N -- generated
 include "song_table.inc"
 
 ; Runtime state (RAM)

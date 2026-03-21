@@ -2,8 +2,9 @@
 ; MSX-DOS MPS Music Player with interactive menu  (MENU.COM)
 ; -----------------------------------------------------------------------------
 ; Song list embedded at build time via menu_names.inc (from vgz/ filenames).
-; Keys: a-z  select song
-;       ESC  quit (also stops playback)
+; Keys: a-z  select song (auto-advances every 3 min, loops all songs)
+;       any  skip to next during playback
+;       ESC  quit
 ; -----------------------------------------------------------------------------
 
         ORG     0100h
@@ -30,73 +31,29 @@ LOAD_PTR:       equ     0x5024  ; 2 bytes
 DATA_PTR:       equ     0x5026  ; 2 bytes
 LOOP_PTR:       equ     0x5028  ; 2 bytes
 LOOP_SET:       equ     0x502A  ; 1 byte
+SONG_IDX:       equ     0x502B  ; 1 byte  (current auto-play index)
+FRAMES_LEFT:    equ     0x502C  ; 2 bytes (countdown timer)
+STOP_REASON:    equ     0x502E  ; 1 byte  (0=ESC, 1=timeout/skip)
+PLAYING:        equ     0x502F  ; 1 byte  (current song index, 0xFF=none)
 
 LOAD_ADDR:      equ     0x8000
 MAX_FILE:       equ     0x7FF0
 
+PLAY_TIME:      equ     10800   ; 3 min * 60 fps
+
 ; =============================================================================
-; Entry point / Menu display
+; Entry point
 ; =============================================================================
 start:
+        ld      a, 0xFF
+        ld      (PLAYING), a
+
+; =============================================================================
+; draw_menu: redraw screen then wait for input
+; =============================================================================
 draw_menu:
-        ; Clear screen (VT52 ESC E)
-        ld      e, 0x1B
-        ld      c, FN_CONOUT
-        call    BDOS
-        ld      e, 'E'
-        ld      c, FN_CONOUT
-        call    BDOS
-
-        ld      de, msg_title
-        ld      c, FN_PRINT
-        call    BDOS
-
-        ; List: a) display name ...
-        xor     a
-.list_loop:
-        cp      MENU_SONG_COUNT
-        jr      z, .list_done
-
-        push    af
-        add     a, 'a'
-        ld      e, a
-        ld      c, FN_CONOUT
-        call    BDOS
-
-        ld      de, msg_sep
-        ld      c, FN_PRINT
-        call    BDOS
-
-        pop     af
-        push    af
-        call    print_name
-
-        pop     af
-        inc     a
-        jr      .list_loop
-
-.list_done:
-        ; Help line: [a-X] Play  [ESC] Quit
-        ld      de, msg_help1
-        ld      c, FN_PRINT
-        call    BDOS
-
-        ld      e, 'a'
-        ld      c, FN_CONOUT
-        call    BDOS
-
-        ld      de, msg_dash
-        ld      c, FN_PRINT
-        call    BDOS
-
-        ld      a, MENU_SONG_COUNT + 96 ; 'a' + MENU_SONG_COUNT - 1
-        ld      e, a
-        ld      c, FN_CONOUT
-        call    BDOS
-
-        ld      de, msg_help2
-        ld      c, FN_PRINT
-        call    BDOS
+        call    draw_screen
+        ; falls through to menu_loop
 
 ; =============================================================================
 ; Menu input loop
@@ -120,7 +77,10 @@ menu_loop:
         cp      MENU_SONG_COUNT
         jr      nc, menu_loop
 
-        call    play_song
+        ld      (SONG_IDX), a
+        call    auto_play_all
+        ld      a, 0xFF
+        ld      (PLAYING), a
         jp      draw_menu
 
 ; =============================================================================
@@ -132,7 +92,121 @@ do_exit:
         call    BDOS
 
 ; =============================================================================
-; print_name: print display name for song index A (FN_PRINT with CRLF$)
+; auto_play_all: play from SONG_IDX, advance every PLAY_TIME frames,
+;                cycle forever. Returns only when ESC is pressed.
+; =============================================================================
+auto_play_all:
+.apl:
+        ; Initialize timer
+        ld      hl, PLAY_TIME
+        ld      (FRAMES_LEFT), hl
+
+        ; Mark current song and redraw menu
+        ld      a, (SONG_IDX)
+        ld      (PLAYING), a
+        call    draw_screen
+
+        ; Play the song
+        ld      a, (SONG_IDX)
+        call    play_song
+
+        ; Check why playback stopped
+        ld      a, (STOP_REASON)
+        or      a
+        ret     z               ; STOP_REASON=0: ESC -> return to caller
+
+        ; STOP_REASON=1: timeout or skip -> advance to next song
+        ld      a, (SONG_IDX)
+        inc     a
+        cp      MENU_SONG_COUNT
+        jr      c, .no_wrap
+        xor     a               ; wrap to first song
+.no_wrap:
+        ld      (SONG_IDX), a
+        jp      .apl
+
+; =============================================================================
+; draw_screen: clear screen and display menu (with * on current song)
+; =============================================================================
+draw_screen:
+        ; Clear screen (VT52 ESC E)
+        ld      e, 0x1B
+        ld      c, FN_CONOUT
+        call    BDOS
+        ld      e, 'E'
+        ld      c, FN_CONOUT
+        call    BDOS
+
+        ld      de, msg_title
+        ld      c, FN_PRINT
+        call    BDOS
+
+        ; Song list with * marker on currently playing song
+        xor     a
+.ds_sl:
+        cp      MENU_SONG_COUNT
+        jr      z, .ds_sl_done
+
+        push    af
+
+        ; Print '*' or ' ' marker
+        ld      b, a
+        ld      a, (PLAYING)
+        cp      b
+        ld      a, b
+        jr      nz, .ds_no_star
+        ld      e, '*'
+        jr      .ds_do_star
+.ds_no_star:
+        ld      e, ' '
+.ds_do_star:
+        push    bc
+        ld      c, FN_CONOUT
+        call    BDOS
+        pop     bc
+        ld      a, b
+
+        ; Print letter
+        add     a, 'a'
+        ld      e, a
+        ld      c, FN_CONOUT
+        call    BDOS
+
+        ld      de, msg_sep
+        ld      c, FN_PRINT
+        call    BDOS
+
+        pop     af
+        push    af
+        call    print_name
+
+        pop     af
+        inc     a
+        jr      .ds_sl
+
+.ds_sl_done:
+        ; Help line
+        ld      de, msg_help1
+        ld      c, FN_PRINT
+        call    BDOS
+        ld      e, 'a'
+        ld      c, FN_CONOUT
+        call    BDOS
+        ld      de, msg_dash
+        ld      c, FN_PRINT
+        call    BDOS
+        ld      a, MENU_SONG_COUNT + 96 ; 'a' + MENU_SONG_COUNT - 1
+        ld      e, a
+        ld      c, FN_CONOUT
+        call    BDOS
+        ld      de, msg_help2
+        ld      c, FN_PRINT
+        call    BDOS
+
+        ret
+
+; =============================================================================
+; print_name: print display name for song index A via FN_PRINT (with CRLF$)
 ; =============================================================================
 print_name:
         add     a, a            ; index * 2
@@ -355,6 +429,7 @@ wait_frames_de:
         cp      (hl)
         jr      z, .spin
 
+        ; Key check
         ld      c, FN_KBHIT
         call    BDOS
         or      a
@@ -362,10 +437,37 @@ wait_frames_de:
 
         ld      c, FN_CONIN
         call    BDOS
+        cp      0x1B
+        jr      z, .key_esc
+        ld      a, 1            ; non-ESC: skip to next song
+        ld      (STOP_REASON), a
         scf
-        ret                     ; any key -> stop
+        ret
+.key_esc:
+        xor     a               ; ESC: return to menu
+        ld      (STOP_REASON), a
+        scf
+        ret
 
 .no_key:
+.wf_frames:
+        ; Decrement song timer; stop when expired
+        ld      hl, (FRAMES_LEFT)
+        ld      a, h
+        or      l
+        jr      z, .wf_de       ; already zero
+        dec     hl
+        ld      (FRAMES_LEFT), hl
+        ld      a, h
+        or      l
+        jr      nz, .wf_de
+        ; Timer expired
+        ld      a, 1
+        ld      (STOP_REASON), a
+        scf
+        ret
+
+.wf_de:
         dec     de
         ld      a, d
         or      e
@@ -379,7 +481,7 @@ wait_frames_de:
 init_psg:
         ld      b, 14
         xor     a
-.loop:
+.iloop:
         ld      c, a
         di
         out     (PSG_ADDR_PORT), a
@@ -388,7 +490,7 @@ init_psg:
         out     (PSG_DATA_PORT), a
         ld      a, c
         inc     a
-        djnz    .loop
+        djnz    .iloop
         ld      a, 7
         di
         out     (PSG_ADDR_PORT), a
@@ -406,7 +508,7 @@ silence_psg:
         out     (PSG_DATA_PORT), a
         ld      b, 3
         ld      a, 8
-.mute:
+.smute:
         ld      c, a
         di
         out     (PSG_ADDR_PORT), a
@@ -415,7 +517,7 @@ silence_psg:
         out     (PSG_DATA_PORT), a
         ld      a, c
         inc     a
-        djnz    .mute
+        djnz    .smute
         ret
 
 ; =============================================================================

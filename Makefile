@@ -1,41 +1,25 @@
-# Apple II Mockingboard Music Player - Makefile
-# Converts VGZ files to A2M format and builds the player
+# MSX-DOS Music Player - Makefile
 
 # Shell (use bash explicitly for Windows compatibility with mingw32-make)
 SHELL = bash
 
 # Tools
 PYTHON = python
-CA65 = ca65
-LD65 = ld65
 Z80ASM = $(TOOLS_DIR)/z80asm.exe
-AC = $(TOOLS_DIR)/ac.jar
 
 # Directories
-SRC_DIR = src
 TOOLS_DIR = tools
 DATA_DIR = data
 VGZ_DIR = vgz
 BUILD_DIR = build
 MSX_DIR = msx
 
-# Source files
-ASM_SRCS = $(SRC_DIR)/startup.s $(SRC_DIR)/player.s $(SRC_DIR)/mockingboard.s
-CFG_FILE = $(SRC_DIR)/apple2.cfg
-
 # Output
-TARGET = $(BUILD_DIR)/player.bin
-DISK_IMAGE = $(BUILD_DIR)/music.dsk
 MSX_TARGET = $(BUILD_DIR)/PLAYER.COM
 
-# VGZ files to convert
-VGZ_FILES = $(wildcard $(VGZ_DIR)/*.vgz)
-A2M_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.a2m,$(VGZ_FILES))
-MPSG_FILES = $(patsubst $(VGZ_DIR)/%.vgz,$(DATA_DIR)/%.mpsg,$(VGZ_FILES))
-
-# Default target (Apple II)
+# Default target
 .PHONY: all
-all: $(TARGET)
+all: msx-all
 
 # MSX all-in-one: convert music + build player
 .PHONY: msx-all
@@ -48,18 +32,6 @@ $(BUILD_DIR):
 # Create data directory
 $(DATA_DIR):
 	mkdir -p $(DATA_DIR)
-
-# Convert VGZ to A2M
-$(DATA_DIR)/%.a2m: $(VGZ_DIR)/%.vgz | $(DATA_DIR)
-	$(PYTHON) $(TOOLS_DIR)/vgz2a2m.py "$<" "$@"
-
-# Convert all VGZ files (handles spaces in filenames)
-.PHONY: convert
-convert:
-	@for f in $(VGZ_DIR)/*.vgz; do \
-		base=$$(basename "$$f" .vgz); \
-		$(PYTHON) $(TOOLS_DIR)/vgz2a2m.py "$$f" "$(DATA_DIR)/$$base.a2m"; \
-	done
 
 # Convert VGZ files to 8.3 MSX-DOS filenames (*.MPS)
 # Output name: first 6 alphanum chars of title (uppercased) + 2-digit index
@@ -79,8 +51,6 @@ $(MSX_TARGET): $(MSX_DIR)/player.asm | $(BUILD_DIR)
 	$(Z80ASM) -o $@ $<
 
 # Build MSX ROM image (Konami mapper, 128KB)
-MSX_ROM_TARGET = $(BUILD_DIR)/player.rom
-
 .PHONY: msx-rom
 msx-rom:
 	$(PYTHON) $(TOOLS_DIR)/build_msx_rom.py
@@ -95,181 +65,27 @@ msx-disk: msx-player
 		exit 1; \
 	fi
 
-# Create a default/placeholder music file if needed
-$(DATA_DIR)/music.a2m: | $(DATA_DIR)
-	@if [ ! -f "$@" ]; then \
-		if [ -n "$(firstword $(VGZ_FILES))" ]; then \
-			$(PYTHON) $(TOOLS_DIR)/vgz2a2m.py "$(firstword $(VGZ_FILES))" "$@"; \
-		else \
-			echo "Creating placeholder music file..."; \
-			printf 'A2M\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFE\x00' > "$@"; \
-		fi \
-	fi
-
-# Assemble source files
-$(BUILD_DIR)/startup.o: $(SRC_DIR)/startup.s | $(BUILD_DIR)
-	$(CA65) -o $@ $<
-
-$(BUILD_DIR)/player.o: $(SRC_DIR)/player.s | $(BUILD_DIR)
-	$(CA65) -o $@ $<
-
-$(BUILD_DIR)/mockingboard.o: $(SRC_DIR)/mockingboard.s | $(BUILD_DIR)
-	$(CA65) -o $@ $<
-
-# Link
-$(TARGET): $(BUILD_DIR)/startup.o $(BUILD_DIR)/player.o $(BUILD_DIR)/mockingboard.o $(CFG_FILE)
-	$(LD65) -C $(CFG_FILE) -o $@ \
-		$(BUILD_DIR)/startup.o \
-		$(BUILD_DIR)/player.o \
-		$(BUILD_DIR)/mockingboard.o
-
-# DOS 3.3 master disk (bootable base)
-DOS33_MASTER = $(TOOLS_DIR)/Apple_DOS_v3.3.dsk
-
-# Title image
-TITLE_PNG = $(VGZ_DIR)/Hinotori (MSX).png
-TITLE_HGR = $(DATA_DIR)/title.hgr
-
-# Convert title image (PNG to HGR)
-.PHONY: image
-image: | $(DATA_DIR)
-	$(PYTHON) $(TOOLS_DIR)/png2hgr.py "$(TITLE_PNG)" "$(TITLE_HGR)"
-	@echo "Title image created: $(TITLE_HGR)"
-
-# Create disk image using pre-built assets (requires AppleCommander)
-# Run 'make convert' and 'make image' first to generate assets
-.PHONY: disk
-disk: $(TARGET)
-	@if command -v java >/dev/null 2>&1 && [ -f "$(AC)" ]; then \
-		missing=""; \
-		for f in "$(DATA_DIR)/01 Title.a2m" "$(DATA_DIR)/02 Game Start.a2m" \
-			"$(DATA_DIR)/03 Main BGM 1.a2m" "$(DATA_DIR)/04 Boss.a2m" \
-			"$(DATA_DIR)/05 Stage Select.a2m" "$(DATA_DIR)/06 Main BGM 2.a2m" \
-			"$(DATA_DIR)/07 Last Boss.a2m" "$(DATA_DIR)/08 Ending.a2m" \
-			"$(DATA_DIR)/09 Staff.a2m" "$(DATA_DIR)/10 Death.a2m" \
-			"$(DATA_DIR)/11 Game Over.a2m"; do \
-			[ -f "$$f" ] || missing="$$missing  $$f\n"; \
-		done; \
-		if [ -n "$$missing" ]; then \
-			echo "Error: Missing A2M files:"; \
-			printf "$$missing"; \
-			echo "Run 'make convert' first to generate music data."; \
-			exit 1; \
-		fi; \
-		cp $(DOS33_MASTER) $(DISK_IMAGE); \
-		java -jar $(AC) -d $(DISK_IMAGE) HELLO 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) APPLESOFT 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) LOADER.OBJ0 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) FPBASIC 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) INTBASIC 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) MASTER 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) "MASTER CREATE" 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) COPY 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) COPY.OBJ0 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) COPYA 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) CHAIN 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) RENUMBER 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) FILEM 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) FID 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) CONVERT13 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) MUFFIN 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) START13 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) BOOT13 2>/dev/null || true; \
-		java -jar $(AC) -d $(DISK_IMAGE) SLOT# 2>/dev/null || true; \
-		tail -c +3 $(TARGET) | java -jar $(AC) -p $(DISK_IMAGE) PLAYER B 0x9000; \
-		if [ -f "$(TITLE_HGR)" ]; then \
-			cat "$(TITLE_HGR)" | java -jar $(AC) -p $(DISK_IMAGE) TITLEIMG B 0x2000; \
-		else \
-			echo "Warning: $(TITLE_HGR) not found. Run 'make image' to generate."; \
-		fi; \
-		cat "$(DATA_DIR)/01 Title.a2m" | java -jar $(AC) -p $(DISK_IMAGE) TITLE B 0x4000; \
-		cat "$(DATA_DIR)/02 Game Start.a2m" | java -jar $(AC) -p $(DISK_IMAGE) GSTART B 0x4000; \
-		cat "$(DATA_DIR)/03 Main BGM 1.a2m" | java -jar $(AC) -p $(DISK_IMAGE) BGM1 B 0x4000; \
-		cat "$(DATA_DIR)/04 Boss.a2m" | java -jar $(AC) -p $(DISK_IMAGE) BOSS B 0x4000; \
-		cat "$(DATA_DIR)/05 Stage Select.a2m" | java -jar $(AC) -p $(DISK_IMAGE) STAGE B 0x4000; \
-		cat "$(DATA_DIR)/06 Main BGM 2.a2m" | java -jar $(AC) -p $(DISK_IMAGE) BGM2 B 0x4000; \
-		cat "$(DATA_DIR)/07 Last Boss.a2m" | java -jar $(AC) -p $(DISK_IMAGE) LASTBOSS B 0x4000; \
-		cat "$(DATA_DIR)/08 Ending.a2m" | java -jar $(AC) -p $(DISK_IMAGE) ENDING B 0x4000; \
-		cat "$(DATA_DIR)/09 Staff.a2m" | java -jar $(AC) -p $(DISK_IMAGE) STAFF B 0x4000; \
-		cat "$(DATA_DIR)/10 Death.a2m" | java -jar $(AC) -p $(DISK_IMAGE) DEATH B 0x4000; \
-		cat "$(DATA_DIR)/11 Game Over.a2m" | java -jar $(AC) -p $(DISK_IMAGE) GAMEOVER B 0x4000; \
-		$(PYTHON) $(TOOLS_DIR)/genmenu.py \
-			"$(DATA_DIR)/01 Title.a2m" \
-			"$(DATA_DIR)/02 Game Start.a2m" \
-			"$(DATA_DIR)/03 Main BGM 1.a2m" \
-			"$(DATA_DIR)/04 Boss.a2m" \
-			"$(DATA_DIR)/05 Stage Select.a2m" \
-			"$(DATA_DIR)/06 Main BGM 2.a2m" \
-			"$(DATA_DIR)/07 Last Boss.a2m" \
-			"$(DATA_DIR)/08 Ending.a2m" \
-			"$(DATA_DIR)/09 Staff.a2m" \
-			"$(DATA_DIR)/10 Death.a2m" \
-			"$(DATA_DIR)/11 Game Over.a2m" \
-			> $(BUILD_DIR)/menu.bas; \
-		cat $(BUILD_DIR)/menu.bas | java -jar $(AC) -bas $(DISK_IMAGE) HELLO; \
-		echo "Disk image created: $(DISK_IMAGE)"; \
-		java -jar $(AC) -l $(DISK_IMAGE); \
-	else \
-		echo "AppleCommander not found. Skipping disk image creation."; \
-		echo "Binary created at: $(TARGET)"; \
-	fi
-
-# Build everything from scratch (convert + image + disk)
-.PHONY: all-disk
-all-disk: convert image disk
-
-# Convert a specific VGZ file and rebuild
-# Usage: make play VGZ=vgz/song.vgz
-.PHONY: play
-play:
-ifdef VGZ
-	$(PYTHON) $(TOOLS_DIR)/vgz2a2m.py "$(VGZ)" $(DATA_DIR)/music.a2m
-	$(MAKE) clean-obj $(TARGET)
-else
-	@echo "Usage: make play VGZ=vgz/song.vgz"
-endif
-
 # Clean build artifacts
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
 
-# Clean only object files (keep binary)
-.PHONY: clean-obj
-clean-obj:
-	rm -f $(BUILD_DIR)/*.o
-
 # Clean everything including converted files
 .PHONY: distclean
 distclean: clean
-	rm -f $(DATA_DIR)/*.a2m
-
-# Show info
-.PHONY: info
-info:
-	@echo "VGZ files found: $(VGZ_FILES)"
-	@echo "A2M files to create: $(A2M_FILES)"
-	@echo "Target binary: $(TARGET)"
+	rm -f $(DATA_DIR)/*.MPS
 
 # Help
 .PHONY: help
 help:
-	@echo "Apple II Mockingboard Music Player"
+	@echo "MSX-DOS Music Player"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make              - Build player binary"
-	@echo "  make convert      - Convert all VGZ files to A2M"
-	@echo "  make msx-all      - Convert music + build MSX-DOS player (PLAYER.COM)"
-	@echo "  make convert-msx  - Convert all VGZ files to MPSG (MSX-DOS)"
-	@echo "  make msx-player   - Build MSX-DOS player (PLAYER.COM)"
-	@echo "  make msx-disk     - Create MSX-DOS disk with player and music"
-	@echo "  make play VGZ=... - Convert specific VGZ and rebuild"
-	@echo "  make image        - Convert title PNG to HGR format"
-	@echo "  make disk         - Create disk image (uses existing assets)"
-	@echo "  make all-disk     - Full build: convert + image + disk"
-	@echo "  make clean        - Remove build artifacts"
-	@echo "  make distclean    - Remove all generated files"
-	@echo "  make info         - Show file information"
-	@echo ""
-	@echo "Example:"
-	@echo "  make play VGZ=\"vgz/01 Title.vgz\""
+	@echo "  make / make msx-all   - Convert music + build PLAYER.COM"
+	@echo "  make convert-msx      - Convert VGZ files to MPS (MSX-DOS)"
+	@echo "  make convert-msx FPS=50 - Convert at 50Hz"
+	@echo "  make msx-player       - Build PLAYER.COM only"
+	@echo "  make msx-rom          - Build ROM image (Konami mapper)"
+	@echo "  make msx-disk         - Create bootable MSX-DOS disk image"
+	@echo "  make clean            - Remove build artifacts"
+	@echo "  make distclean        - Remove build + converted MPS files"

@@ -3,7 +3,8 @@
 ; -----------------------------------------------------------------------------
 ; - Bank 0 (0x4000-0x5FFF): code + menu + song table
 ; - Data banks are mapped to 0xA000-0xBFFF via Konami register 0xA000
-; - Song data (.MPS) is packed in ROM banks 1..
+; - Keys: a-z  select/start song; during play: any key=next, ESC=menu
+; - Auto-advance every 3 minutes, loops forever until ESC
 ; -----------------------------------------------------------------------------
 
         org     0x4000
@@ -28,6 +29,18 @@ BDRCLR:         equ     0xF3EB
 KONAMI_REG3:    equ     0xA000
 RAM_BASE:       equ     0xC000
 
+PLAY_TIME:      equ     10800   ; 3 min * 60 fps
+
+; RAM layout
+src_ptr:        equ     RAM_BASE + 0    ; 2 bytes
+src_bank:       equ     RAM_BASE + 2    ; 1 byte
+loop_ptr:       equ     RAM_BASE + 3    ; 2 bytes
+loop_bank:      equ     RAM_BASE + 5    ; 1 byte
+loop_set:       equ     RAM_BASE + 6    ; 1 byte
+play_idx:       equ     RAM_BASE + 7    ; 1 byte  (current song index)
+stop_reason:    equ     RAM_BASE + 8    ; 1 byte  (0=ESC, 1=skip/timeout)
+frames_left:    equ     RAM_BASE + 9    ; 2 bytes (countdown)
+
         db      'A','B'
         dw      init
         dw      0
@@ -37,7 +50,6 @@ RAM_BASE:       equ     0xC000
 init:
         ei
         call    map_page2_to_cart_slot_bios
-        ; Switch to SCREEN 1: white text on dark blue
         ld      a, 15
         ld      (FORCLR), a
         ld      a, 4
@@ -47,32 +59,58 @@ init:
         ld      a, 1
         call    CHGMOD
         call    psg_selftest
-        xor     a
-        ld      (play_all_mode), a
 
 menu_redraw:
-        call    draw_menu_static
+        call    draw_menu
 
 menu_loop:
         call    CHGET
-        cp      '0'
-        jr      z, menu_key_0
-        cp      '1'
-        jr      c, menu_loop        ; < '1', ignore
-        sub     '1'                 ; convert to 0-based index
+        cp      'A'
+        jr      c, menu_loop
+        cp      'Z' + 1
+        jr      nc, .ml_upper_done
+        or      0x20
+.ml_upper_done:
+        cp      'a'
+        jr      c, menu_loop
+        cp      'z' + 1
+        jr      nc, menu_loop
+        sub     'a'
         cp      SONG_COUNT
-        jr      nc, menu_loop       ; >= SONG_COUNT, ignore
-        call    play_index
-        jr      menu_redraw
+        jr      nc, menu_loop
 
-menu_key_0:
-        call    play_all
+        ld      (play_idx), a
+        call    auto_play_all
         jr      menu_redraw
 
 ; -----------------------------------------------------------------------------
-; Menu display
+; auto_play_all
 ; -----------------------------------------------------------------------------
-draw_menu_static:
+auto_play_all:
+.apl:
+        ld      hl, PLAY_TIME
+        ld      (frames_left), hl
+
+        ld      a, (play_idx)
+        call    play_song
+
+        ld      a, (stop_reason)
+        or      a
+        ret     z               ; ESC -> back to menu
+
+        ld      a, (play_idx)
+        inc     a
+        cp      SONG_COUNT
+        jr      c, .apl_next
+        xor     a
+.apl_next:
+        ld      (play_idx), a
+        jp      .apl
+
+; -----------------------------------------------------------------------------
+; draw_menu
+; -----------------------------------------------------------------------------
+draw_menu:
         call    CLS
         ld      hl, msg_screen
         call    print0
@@ -84,35 +122,9 @@ draw_menu_static:
         ret
 
 ; -----------------------------------------------------------------------------
-; Playback
+; play_song: load and play song index A
 ; -----------------------------------------------------------------------------
-play_all:
-        ld      a, 1
-        ld      (play_all_mode), a
-        xor     a
-        ld      (play_idx), a
-
-play_all_loop:
-        ld      a, (play_idx)
-        cp      SONG_COUNT
-        jr      z, play_all_done
-        call    play_index
-        ld      a, (play_idx)
-        inc     a
-        ld      (play_idx), a
-        ld      a, (user_stop)
-        or      a
-        jr      nz, play_all_done
-        jr      play_all_loop
-
-play_all_done:
-        xor     a
-        ld      (play_all_mode), a
-        ret
-
-; In A = index 0..SONG_COUNT-1
-play_index:
-        ; Show now playing
+play_song:
         push    af
         ld      h, 1
         ld      l, 22
@@ -121,30 +133,31 @@ play_index:
         call    print0
         pop     af
         push    af
-        ld      hl, song_name_table
-        add     a, a
-        ld      e, a
-        ld      d, 0
-        add     hl, de
-        ld      a, (hl)
-        inc     hl
-        ld      h, (hl)
-        ld      l, a
-        call    print0
+
+        ; Print "(X)" where X is the key letter
+        add     a, 'a'
+        push    af
+        ld      a, '('
+        call    CHPUT
+        pop     af
+        call    CHPUT
+        ld      a, ')'
+        call    CHPUT
+        ld      a, ' '
+        call    CHPUT
         pop     af
 
+        ; Find song_table entry (3 bytes each)
         ld      hl, song_table
+        or      a
+        jr      z, .ps_entry
         ld      b, a
         ld      de, 3
-play_index_off_loop:
-        ld      a, b
-        or      a
-        jr      z, play_index_entry
+.ps_off:
         add     hl, de
-        dec     b
-        jr      play_index_off_loop
+        djnz    .ps_off
 
-play_index_entry:
+.ps_entry:
         ld      a, (hl)
         ld      (src_bank), a
         inc     hl
@@ -152,135 +165,182 @@ play_index_entry:
         ld      (src_ptr), a
         inc     hl
         ld      a, (hl)
-        ld      (src_ptr+1), a
+        ld      (src_ptr + 1), a
 
         ld      a, (src_bank)
         call    set_bank_data
 
-        ; skip 16-byte MPS header
-        ld      b, 16
-play_skip_header_loop:
+        ; Skip 16-byte MPS header using C counter (NOT djnz -- fetch_byte clobbers B)
+        ld      c, 16
+.ps_skip:
         call    fetch_byte
-        djnz    play_skip_header_loop
+        dec     c
+        jr      nz, .ps_skip
 
         xor     a
         ld      (loop_set), a
-        ld      (user_stop), a
+        ld      (stop_reason), a
 
-play_stream_loop:
-        ; Any key pressed = stop
-        call    CHSNS
-        jr      z, play_no_stop
-        call    CHGET                       ; consume key
-        ld      a, 1
-        ld      (user_stop), a
-        jr      play_done
-play_no_stop:
+.ps_loop:
         call    play_frame
-        jr      c, play_done
-        jr      play_stream_loop
+        jr      c, .ps_done
+        jr      .ps_loop
 
-play_done:
+.ps_done:
         call    silence_psg
         ret
 
 ; -----------------------------------------------------------------------------
-; Stream player
+; play_frame
 ; -----------------------------------------------------------------------------
-; carry set on end
 play_frame:
-play_frame_loop:
+.pf_next:
         call    fetch_byte
 
-        cp      0FEh
-        jr      z, play_song_end
-        cp      0FDh
-        jr      z, play_set_loop
-        cp      0FFh
-        jr      z, play_wait_ext
+        cp      0xFE
+        jr      z, .pf_end
+        cp      0xFD
+        jr      z, .pf_setloop
+        cp      0xFF
+        jr      z, .pf_ext
 
-        cp      80h
-        jr      nc, play_wait_short
+        cp      0x80
+        jr      nc, .pf_short
 
         ; register write
         ld      c, a
         call    fetch_byte
         ld      d, a
-        ; R7 (mixer): keep lower 6 bits, force IOB=output (bit7=1)
         ld      a, c
         cp      7
-        jr      nz, psg_reg_write
+        jr      nz, .pf_psg
         ld      a, d
-        and     3Fh
-        or      80h
+        and     0x3F
+        or      0x80
         ld      d, a
-psg_reg_write:
+.pf_psg:
         ld      a, c
         di
         out     (PSG_ADDR_PORT), a
         ld      a, d
         ei
         out     (PSG_DATA_PORT), a
-        jr      play_frame_loop
+        jr      .pf_next
 
-play_wait_short:
-        sub     7Fh
+.pf_short:
+        sub     0x7F
         call    wait_frames_a
-        or      a
         ret
 
-play_wait_ext:
+.pf_ext:
         call    fetch_byte
         ld      e, a
         call    fetch_byte
         ld      d, a
         call    wait_frames_de
-        or      a
         ret
 
-play_set_loop:
+.pf_setloop:
         ld      a, (loop_set)
         or      a
-        jr      nz, play_frame_loop
+        jr      nz, .pf_next
         ld      a, (src_bank)
         ld      (loop_bank), a
         ld      hl, (src_ptr)
         ld      (loop_ptr), hl
         ld      a, 1
         ld      (loop_set), a
-        jr      play_frame_loop
+        jr      .pf_next
 
-play_song_end:
+.pf_end:
         ld      a, (loop_set)
         or      a
-        jr      z, play_end
-
-        ld      a, (play_all_mode)
-        or      a
-        jr      nz, play_end
-
+        jr      z, .pf_done
         ld      a, (loop_bank)
         ld      (src_bank), a
         call    set_bank_data
         ld      hl, (loop_ptr)
         ld      (src_ptr), hl
-        jr      play_frame_loop
-
-play_end:
+        jp      .pf_next
+.pf_done:
         scf
         ret
 
-; Read byte from banked ROM stream
+; -----------------------------------------------------------------------------
+; wait_frames_a / wait_frames_de
+; -----------------------------------------------------------------------------
+wait_frames_a:
+        ld      e, a
+        ld      d, 0
+
+wait_frames_de:
+        ld      a, d
+        or      e
+        ret     z
+
+.wf_loop:
+        ld      a, (JIFFY)
+        ld      b, a
+.wf_spin:
+        ld      a, (JIFFY)
+        cp      b
+        jr      z, .wf_spin
+
+        ; Key check
+        call    CHSNS
+        jr      z, .wf_no_key
+
+        call    CHGET
+        cp      0x1B
+        jr      z, .wf_esc
+        ld      a, 1
+        ld      (stop_reason), a
+        scf
+        ret
+.wf_esc:
+        xor     a
+        ld      (stop_reason), a
+        scf
+        ret
+
+.wf_no_key:
+        ; FRAMES_LEFT countdown
+        ld      hl, (frames_left)
+        ld      a, h
+        or      l
+        jr      z, .wf_de
+        dec     hl
+        ld      (frames_left), hl
+        ld      a, h
+        or      l
+        jr      nz, .wf_de
+        ; Expired -> next song
+        ld      a, 1
+        ld      (stop_reason), a
+        scf
+        ret
+
+.wf_de:
+        dec     de
+        ld      a, d
+        or      e
+        jp      nz, .wf_loop
+        or      a
+        ret
+
+; -----------------------------------------------------------------------------
+; fetch_byte: read from banked ROM stream, preserves BC
+; -----------------------------------------------------------------------------
 fetch_byte:
         ld      hl, (src_ptr)
         ld      a, (hl)
-        ld      b, a
+        push    af              ; save byte (B not used -- callers may use djnz)
 
         inc     hl
         ld      (src_ptr), hl
         ld      a, h
         cp      0xC0
-        jr      nz, fetch_no_wrap
+        jr      nz, .fb_ok
 
         ld      hl, 0xA000
         ld      (src_ptr), hl
@@ -289,8 +349,8 @@ fetch_byte:
         ld      (src_bank), a
         call    set_bank_data
 
-fetch_no_wrap:
-        ld      a, b
+.fb_ok:
+        pop     af
         ret
 
 set_bank_data:
@@ -306,32 +366,9 @@ map_page2_to_cart_slot_bios:
         call    ENASLT
         ret
 
-set_bank2_logical:
-        jp      set_bank_data
-
-wait_frames_a:
-        ld      e, a
-        ld      d, 0
-        jr      wait_frames_de
-
-wait_frames_de:
-        ld      a, d
-        or      e
-        ret     z
-
-wait_frames_loop:
-        ld      a, (JIFFY)
-        ld      b, a
-wait_frames_spin:
-        ld      a, (JIFFY)
-        cp      b
-        jr      z, wait_frames_spin
-        dec     de
-        ld      a, d
-        or      e
-        jr      nz, wait_frames_loop
-        ret
-
+; -----------------------------------------------------------------------------
+; PSG helpers
+; -----------------------------------------------------------------------------
 silence_psg:
         ld      a, 7
         di
@@ -339,21 +376,18 @@ silence_psg:
         ld      a, 0xBF
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 8
         di
         out     (PSG_ADDR_PORT), a
         xor     a
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 9
         di
         out     (PSG_ADDR_PORT), a
         xor     a
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 10
         di
         out     (PSG_ADDR_PORT), a
@@ -375,26 +409,26 @@ psg_selftest:
         ld      a, 0x01
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 7
         di
         out     (PSG_ADDR_PORT), a
         ld      a, 0xBE
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 8
         di
         out     (PSG_ADDR_PORT), a
         ld      a, 10
         ei
         out     (PSG_DATA_PORT), a
-
         ld      a, 20
         call    wait_frames_a
         call    silence_psg
         ret
 
+; -----------------------------------------------------------------------------
+; print0: null-terminated string
+; -----------------------------------------------------------------------------
 print0:
         ld      a, (hl)
         or      a
@@ -411,13 +445,3 @@ msg_now_playing:
 
 ; msg_screen, msg_help, song_name_table, song_name_N -- generated
 include "song_table.inc"
-
-; Runtime state (RAM)
-src_ptr:        equ     RAM_BASE + 0
-src_bank:       equ     RAM_BASE + 2
-loop_ptr:       equ     RAM_BASE + 3
-loop_bank:      equ     RAM_BASE + 5
-loop_set:       equ     RAM_BASE + 6
-play_all_mode:  equ     RAM_BASE + 7
-play_idx:       equ     RAM_BASE + 8
-user_stop:      equ     RAM_BASE + 9

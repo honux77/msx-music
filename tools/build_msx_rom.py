@@ -57,16 +57,17 @@ def build_table(song_infos: list[tuple[str, int, int, int]],
         f'        db      "  * {title} *",13,10',
         f'        db      "  {sep}",13,10',
         '        db      13,10',
-        '        db      " 0) Play All",13,10',
     ]
-    for i, name in enumerate(display_names, 1):
-        lines.append(f'        db      " {i}) {name}",13,10')
+    for i, name in enumerate(display_names):
+        letter = chr(ord('a') + i)
+        lines.append(f'        db      " {letter}) {name}",13,10')
     lines.append('        db      0')
 
+    last_letter = chr(ord('a') + n - 1)
     # msg_help
     lines += [
         'msg_help:',
-        f'        db      "0-{n}:Select  Any:Stop",0',
+        f'        db      "[a-{last_letter}]:Play Any:Next ESC:Menu",0',
     ]
 
     # song_name_table + individual strings

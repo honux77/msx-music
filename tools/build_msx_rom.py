@@ -6,24 +6,22 @@ import os
 import subprocess
 from pathlib import Path
 
-ROOT = Path('/Users/honux/HobbyProjects/msx-music')
-MSX_DIR = ROOT / 'msx'
+ROOT     = Path(__file__).resolve().parent.parent
+MSX_DIR  = ROOT / 'msx'
 DATA_DIR = ROOT / 'data'
 BUILD_DIR = ROOT / 'build'
+TOOLS_DIR = ROOT / 'tools'
 
 CODE_ASM = MSX_DIR / 'player_rom.asm'
 SONG_INC = MSX_DIR / 'song_table.inc'
 CODE_BIN = BUILD_DIR / 'player_rom_code.bin'
-ROM_OUT = BUILD_DIR / 'player.rom'
+ROM_OUT  = BUILD_DIR / 'player.rom'
+
+Z80ASM = TOOLS_DIR / 'z80asm.exe' if (TOOLS_DIR / 'z80asm.exe').exists() else 'z80asm'
 
 BANK_SIZE = 0x2000  # 8KB (Konami mapper granularity)
-ROM_SIZE = 0x20000  # 128KB
+ROM_SIZE  = 0x20000  # 128KB
 DATA_BASE_OFFSET = 0x2000  # bank 1 starts here (bank 0 is code)
-
-SONGS = [
-    ('MOHENJO.MPS', '01 Usas [Mohenjo daro].vgz'),
-    ('JUBA.MPS',    '02 Usas [Juba ruins].vgz'),
-]
 
 
 def build_table(song_infos: list[tuple[str, int, int, int]]) -> None:
@@ -40,11 +38,8 @@ def main() -> int:
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
 
     blobs: list[tuple[str, bytes]] = []
-    for mps_name, _orig in SONGS:
-        p = DATA_DIR / mps_name
-        if not p.exists():
-            raise FileNotFoundError(f'missing song file: {p}')
-        blobs.append((mps_name, p.read_bytes()))
+    for p in sorted(DATA_DIR.glob('*.MPS')):
+        blobs.append((p.name, p.read_bytes()))
 
     total_song_bytes = sum(len(b) for _, b in blobs)
     required_data_banks = math.ceil(total_song_bytes / BANK_SIZE)
@@ -65,7 +60,7 @@ def main() -> int:
     build_table(song_infos)
 
     # Assemble code bank
-    subprocess.run(['z80asm', '-I', str(MSX_DIR), '-o', str(CODE_BIN), str(CODE_ASM)], check=True)
+    subprocess.run([str(Z80ASM), '-I', str(MSX_DIR), '-o', str(CODE_BIN), str(CODE_ASM)], check=True)
     code = CODE_BIN.read_bytes()
     if len(code) > BANK_SIZE:
         raise RuntimeError(f'code too large for bank0: {len(code)} bytes')

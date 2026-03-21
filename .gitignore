@@ -54,11 +54,14 @@ dkms.conf
 # debug information files
 *.dwo
 
-# Apple II Music Player specific
+# Build artifacts
 build/
 tools/ac.jar
 !tools/z80asm.exe
+tools/__pycache__/
 data/*.a2m
+data/*.MPS
+msx/song_table.inc
 *.lst
 
 # macOS

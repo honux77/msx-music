@@ -61,18 +61,11 @@ convert:
 # Output name: first 6 alphanum chars of title (uppercased) + 2-digit index
 # e.g. "01 Usas [Mohenjo daro].vgz" -> USASMO01.MPS
 # Usage: make convert-msx [FPS=50|60]
+FPS ?= 60
+
 .PHONY: convert-msx
 convert-msx:
-	@fps=$${FPS:-60}; \
-	i=1; \
-	for f in "$(VGZ_DIR)"/*.vgz; do \
-		base=$$(basename "$$f" .vgz); \
-		title=$$(echo "$$base" | sed 's/^[0-9]*[[:space:]]*//' | tr -cd 'A-Za-z0-9'); \
-		prefix=$$(echo "$$title" | tr '[:lower:]' '[:upper:]' | cut -c1-6); \
-		outname=$$(printf "%s%02d.MPS" "$$prefix" $$i); \
-		$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$$f" "$(DATA_DIR)/$$outname" "$$fps"; \
-		i=$$((i+1)); \
-	done
+	$(PYTHON) $(TOOLS_DIR)/convert_msx.py $(VGZ_DIR) $(DATA_DIR) $(FPS)
 
 # Build MSX-DOS player (.COM)
 .PHONY: msx-player

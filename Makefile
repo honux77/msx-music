@@ -56,14 +56,18 @@ msx-rom:
 	$(PYTHON) $(TOOLS_DIR)/build_msx_rom.py
 
 # Build MSX-DOS disk image with player and music files
+MSX_BASE_DSK = $(TOOLS_DIR)/msxdos103-111hf clean.dsk
+MSX_DSK      = $(BUILD_DIR)/msx-music.dsk
+
 .PHONY: msx-disk
-msx-disk: msx-player
-	@if command -v mcopy >/dev/null 2>&1; then \
-		$(TOOLS_DIR)/make_msx_disk.sh; \
-	else \
-		echo "Error: mtools not found. Install with: brew install mtools"; \
-		exit 1; \
-	fi
+msx-disk: msx-all
+	$(PYTHON) $(TOOLS_DIR)/make_msx_disk.py \
+		"$(MSX_BASE_DSK)" \
+		"$(MSX_DSK)" \
+		$(MSX_TARGET) \
+		$(wildcard $(DATA_DIR)/*.MPS) \
+		$(wildcard $(MSX_DIR)/SONGLIST.TXT)
+	@echo "To test: openmsx -machine Panasonic_FS-A1GT -diska \"$(MSX_DSK)\""
 
 # Clean build artifacts
 .PHONY: clean

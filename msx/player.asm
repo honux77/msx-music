@@ -255,17 +255,9 @@ wait_frames_de:
         ret
 
 .key_pressed:
-        ld      c, FN_CONIN                    ; read the key
+        ld      c, FN_CONIN                    ; read and discard the key
         call    BDOS
-        cp      0x1B                           ; ESC?
-        scf
-        ret     z                              ; ESC -> carry = stop
-        ; other key: count this tick and keep playing
-        dec     de
-        ld      a, d
-        or      e
-        jr      nz, .wait_loop
-        or      a                              ; clear carry, done normally
+        scf                                    ; any key -> carry = stop
         ret
 
 silence_psg:

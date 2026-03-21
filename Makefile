@@ -26,6 +26,11 @@ all: msx-all
 .PHONY: msx-all
 msx-all: convert-msx msx-player msx-menu
 
+# Generate menu_names.inc from vgz/ filenames
+.PHONY: gen-menu-names
+gen-menu-names:
+	$(PYTHON) $(TOOLS_DIR)/gen_menu_names.py
+
 # Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -56,7 +61,8 @@ $(MSX_TARGET): $(MSX_DIR)/player.asm | $(BUILD_DIR)
 msx-menu: $(MENU_TARGET)
 
 $(MENU_TARGET): $(MSX_DIR)/menu.asm | $(BUILD_DIR)
-	$(Z80ASM) -o $@ $<
+	$(PYTHON) $(TOOLS_DIR)/gen_menu_names.py
+	$(Z80ASM) -I $(MSX_DIR) -o $@ $(MSX_DIR)/menu.asm
 
 # Build MSX ROM image (Konami mapper, 128KB)
 .PHONY: msx-rom
@@ -74,6 +80,7 @@ msx-disk: msx-all
 		"$(MSX_DSK)" \
 		$(MSX_TARGET) \
 		$(MENU_TARGET) \
+		$(MSX_DIR)/AUTOEXEC.BAT \
 		$(wildcard $(DATA_DIR)/*.MPS)
 	@echo "To test: openmsx -machine Panasonic_FS-A1GT -diska \"$(MSX_DSK)\""
 

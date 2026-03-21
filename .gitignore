@@ -67,3 +67,4 @@ msx/song_table.inc
 
 # macOS
 .DS_Store
+msx/menu_names.inc

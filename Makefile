@@ -15,15 +15,16 @@ BUILD_DIR = build
 MSX_DIR = msx
 
 # Output
-MSX_TARGET = $(BUILD_DIR)/MPSPLAY.COM
+MSX_TARGET  = $(BUILD_DIR)/MPSPLAY.COM
+MENU_TARGET = $(BUILD_DIR)/MENU.COM
 
 # Default target
 .PHONY: all
 all: msx-all
 
-# MSX all-in-one: convert music + build player
+# MSX all-in-one: convert music + build player + menu
 .PHONY: msx-all
-msx-all: convert-msx msx-player
+msx-all: convert-msx msx-player msx-menu
 
 # Create build directory
 $(BUILD_DIR):
@@ -50,6 +51,13 @@ msx-player: $(MSX_TARGET)
 $(MSX_TARGET): $(MSX_DIR)/player.asm | $(BUILD_DIR)
 	$(Z80ASM) -o $@ $<
 
+# Build interactive menu player (MENU.COM)
+.PHONY: msx-menu
+msx-menu: $(MENU_TARGET)
+
+$(MENU_TARGET): $(MSX_DIR)/menu.asm | $(BUILD_DIR)
+	$(Z80ASM) -o $@ $<
+
 # Build MSX ROM image (Konami mapper, 128KB)
 .PHONY: msx-rom
 msx-rom:
@@ -65,8 +73,8 @@ msx-disk: msx-all
 		"$(MSX_BASE_DSK)" \
 		"$(MSX_DSK)" \
 		$(MSX_TARGET) \
-		$(wildcard $(DATA_DIR)/*.MPS) \
-		$(wildcard $(MSX_DIR)/SONGLIST.TXT)
+		$(MENU_TARGET) \
+		$(wildcard $(DATA_DIR)/*.MPS)
 	@echo "To test: openmsx -machine Panasonic_FS-A1GT -diska \"$(MSX_DSK)\""
 
 # Clean build artifacts
@@ -85,10 +93,11 @@ help:
 	@echo "MSX-DOS Music Player"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make / make msx-all   - Convert music + build MPSPLAY.COM"
+	@echo "  make / make msx-all   - Convert music + build MPSPLAY.COM + MENU.COM"
 	@echo "  make convert-msx      - Convert VGZ files to MPS (MSX-DOS)"
 	@echo "  make convert-msx FPS=50 - Convert at 50Hz"
 	@echo "  make msx-player       - Build MPSPLAY.COM only"
+	@echo "  make msx-menu         - Build MENU.COM (interactive menu)"
 	@echo "  make msx-rom          - Build ROM image (Konami mapper)"
 	@echo "  make msx-disk         - Create bootable MSX-DOS disk image"
 	@echo "  make clean            - Remove build artifacts"

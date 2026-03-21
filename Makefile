@@ -2,10 +2,10 @@
 # Converts VGZ files to A2M format and builds the player
 
 # Tools
-PYTHON = python3
+PYTHON = python
 CA65 = ca65
 LD65 = ld65
-Z80ASM = z80asm
+Z80ASM = $(TOOLS_DIR)/z80asm.exe
 AC = $(TOOLS_DIR)/ac.jar
 
 # Directories
@@ -55,12 +55,21 @@ convert:
 	done
 
 # Convert VGZ files to 8.3 MSX-DOS filenames (*.MPS)
+# Output name: first 6 alphanum chars of title (uppercased) + 2-digit index
+# e.g. "01 Usas [Mohenjo daro].vgz" -> USASMO01.MPS
 # Usage: make convert-msx [FPS=50|60]
 .PHONY: convert-msx
 convert-msx:
 	@fps=$${FPS:-60}; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/01 Usas [Mohenjo daro].vgz" "$(DATA_DIR)/MOHENJO.MPS" "$$fps"; \
-	$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$(VGZ_DIR)/02 Usas [Juba ruins].vgz" "$(DATA_DIR)/JUBA.MPS" "$$fps"
+	i=1; \
+	for f in "$(VGZ_DIR)"/*.vgz; do \
+		base=$$(basename "$$f" .vgz); \
+		title=$$(echo "$$base" | sed 's/^[0-9]*[[:space:]]*//' | tr -cd 'A-Za-z0-9'); \
+		prefix=$$(echo "$$title" | tr '[:lower:]' '[:upper:]' | cut -c1-6); \
+		outname=$$(printf "%s%02d.MPS" "$$prefix" $$i); \
+		$(PYTHON) $(TOOLS_DIR)/vgz2mpsg.py "$$f" "$(DATA_DIR)/$$outname" "$$fps"; \
+		i=$$((i+1)); \
+	done
 
 # Build MSX-DOS player (.COM)
 .PHONY: msx-player

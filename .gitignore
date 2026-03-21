@@ -57,6 +57,7 @@ dkms.conf
 # Apple II Music Player specific
 build/
 tools/ac.jar
+!tools/z80asm.exe
 data/*.a2m
 *.lst
 

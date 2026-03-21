@@ -35,3 +35,4 @@ jobs:
             build/player.rom
             build/MPSPLAY.COM
             build/MENU.COM
+            tools/convert_msx.py
